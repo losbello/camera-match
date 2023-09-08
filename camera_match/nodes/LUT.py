@@ -1,65 +1,97 @@
 import numpy as np
-import tensorflow as tf
+from scipy.spatial.distance import cdist
 from colour.algebra import table_interpolation_tetrahedral
 from colour import LUT3D, read_LUT
-from .Node import Node  # Assuming Node is in the same directory
+from .Node import Node
 
-class RBFLayer(tf.keras.layers.Layer):
-    def __init__(self, output_dim, **kwargs):
-        self.output_dim = output_dim
-        super(RBFLayer, self).__init__(**kwargs)
+from typing import Optional, Any
+from typing import Optional, Any, Tuple
+from numpy.typing import NDArray
+# xalglib only available in Windows & Linux(?)
+try:
+    from xalglib import xalglib
+except ImportError:
+    import warnings
+    warnings.warn("RBF library cannot be loaded.", ImportWarning)
 
-    def build(self, input_shape):
-        # Create the trainable weights for the RBF layer
-        self.centers = self.add_weight(name='centers',
-                                       shape=(self.output_dim, input_shape[1]),
-                                       initializer='uniform',
-                                       trainable=True)
-        super(RBFLayer, self).build(input_shape)
-
-    def call(self, x):
-        # The core logic for the custom RBF layer goes here.
-        # For demonstration, a simple Euclidean distance calculation is shown.
-        # You can replace it with your specific RBF function.
-        return tf.reduce_sum(tf.square(tf.expand_dims(x, 1) - self.centers), axis=2)
-
-# Create a simple RBF network for demonstration
-def create_rbf_network(input_shape, output_dim):
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.InputLayer(input_shape=input_shape))
-    model.add(RBFLayer(output_dim))
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    return model
-
-class RBF(Node):  # Assuming Node is a class you've defined
-    def __init__(self, size=33, output_dim=10):
+class RBF(Node):
+    def __init__(self, radius: float=1):
+    def __init__(self, size: int=33, radius: float=5.0, layers: int=10, smoothing: float=0.001):
         self.size = size
-        self.output_dim = output_dim
-        self.model = create_rbf_network((3,), self.output_dim)  # Assuming 3D points as input (you can adjust accordingly)
         self.LUT = None
 
-    def solve(self, source, target):
-        self.model.fit(source, target, epochs=10)  # Fit the model to the source and target points
-        predicted_target = self.model.predict(source)
-        
-        # Generate LUT table here based on predicted_target
-        # Assuming you will populate self.LUT similar to your existing implementation
-        return (predicted_target, target)
+        self.radius = radius
+        self.weights = None
+        self.coordinates = None
+        self.layers = layers
+        self.smoothing = smoothing
 
-    def __call__(self, RGB):
+    def solve(self, source: NDArray[Any], target: NDArray[Any]) -> Tuple[NDArray[Any], NDArray[Any]]:
+        data = np.hstack((source, target))
+
+        model = xalglib.rbfcreate(3, 3)
+        xalglib.rbfsetpoints(model, data.tolist())
+        xalglib.rbfsetalgohierarchical(model, self.radius, self.layers, self.smoothing)
+        xalglib.rbfbuildmodel(model)
+
+        grid = np.linspace(0, 1, self.size).tolist()
+        table = xalglib.rbfgridcalc3v(model, grid, self.size, grid, self.size, grid, self.size)
+
+        # xalglib outputs coordinates in (z, y, x). Swapping axis 0 and 2
+        # gives (x, y, z) which is needed for the LUT table.
+        LUT_table = np.reshape(table, (self.size, self.size, self.size, 3)).swapaxes(0, 2)
+
+        self.LUT = LUT3D(table=LUT_table)
+        return (self(source), target)
+
+    def __call__(self, RGB: NDArray[Any]) -> NDArray[Any]:
         if self.LUT is None:
             return RGB
+
         return self.LUT.apply(RGB, interpolator=table_interpolation_tetrahedral)
 
-# Assuming you have a LUT class similar to your existing implementation
+    def solve(self, source: NDArray[Any], target: NDArray[Any]):
+        self.coordinates = source
+        self.weights = self._solve_weights(source, target)
 class LUT(Node):
     def __init__(self, path):
         self.LUT = read_LUT(path)
-    
-    def solve(self, source, target):
+
+    def solve(self, source: NDArray[Any], target: NDArray[Any]) -> Tuple[NDArray[Any], NDArray[Any]]:
         return (self(source), target)
 
-    def __call__(self, RGB):
+    def __call__(self, RGB: NDArray[Any]) -> NDArray[Any]:
+        if self.weights is None or self.coordinates is None:
         if self.LUT is None:
             return RGB
+
+        shape = RGB.shape
+        RGB = np.reshape(RGB, (-1, 3))
+
+        points = self.coordinates.shape[0]
+
+        H = np.zeros((RGB.shape[0], points + 3 + 1))
+        H[:, :points] = self.basis(cdist(RGB, self.coordinates), self.radius)
+        H[:, points] = 1.0
+        H[:, -3:] = RGB
+        return np.reshape(np.asarray(np.dot(H, self.weights)), shape)
+
+    def _solve_weights(self, X, Y):
+        npts, dim = X.shape
+        H = np.zeros((npts + 3 + 1, npts + 3 + 1))
+        H[:npts, :npts] = self.basis(cdist(X, X), self.radius)
+        H[npts, :npts] = 1.0
+        H[:npts, npts] = 1.0
+        H[:npts, -3:] = X
+        H[-3:, :npts] = X.T
+
+        rhs = np.zeros((npts + 3 + 1, dim))
+        rhs[:npts, :] = Y
+        return np.linalg.solve(H, rhs)
+
+    @staticmethod
+    def basis(X, r):
+        arg = X / r
+        v = 1 - arg / 9
+        return np.where(v > 0, np.exp(1 - arg - 1/v), 0)
         return self.LUT.apply(RGB, interpolator=table_interpolation_tetrahedral)
