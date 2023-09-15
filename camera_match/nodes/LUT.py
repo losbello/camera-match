@@ -30,23 +30,24 @@ class RBF(Node):
         xalglib.rbfsetpoints(model, data.tolist())
 
         # Initialize the progress bar
-        total_steps = 100  # You can adjust this based on your process
+        total_steps = 100  
         progress_bar = tqdm(total=total_steps, desc="Progress")
 
         # Part 1: Setting up the RBF model
         with tqdm(total=50, desc="Setting up RBF Model") as sub_progress_bar:
-            sub_progress_bar.update(10)  # Update progress by 10% for the setup part
+            sub_progress_bar.update(10)  
             xalglib.rbfsetalgohierarchical(model, self.radius, self.layers, self.smoothing)
-            sub_progress_bar.update(40)  # Update progress by 40% for hierarchical setup
+            sub_progress_bar.update(40)  
 
         xalglib.rbfbuildmodel(model)
+        print("Model built, starting second progress bar")  # Debugging print statement
 
         # Part 2: Building the LUT table
+        print("About to start second progress bar")  # Debugging print statement
         with tqdm(total=50, desc="Building LUT Table") as sub_progress_bar:
             grid = np.linspace(0, 1, self.size).tolist()
             table = xalglib.rbfgridcalc3v(model, grid, self.size, grid, self.size, grid, self.size)
 
-            # Divide the process into sub-steps
             num_sub_steps = 10
             sub_step_size = len(table) // num_sub_steps
 
@@ -54,13 +55,9 @@ class RBF(Node):
                 start_index = sub_step * sub_step_size
                 end_index = (sub_step + 1) * sub_step_size
 
-                # Perform a sub-step of the calculation
                 sub_table = table[start_index:end_index]
+                sub_progress_bar.update(5)  
 
-                # Update the progress bar for the sub-step
-                sub_progress_bar.update(5)  # Update by 5% for each sub-step
-
-            # Ensure the progress bar reaches 100%
             sub_progress_bar.update(50 - (5 * num_sub_steps))
 
         # Close the progress bars
@@ -74,6 +71,7 @@ class RBF(Node):
             return RGB
 
         return self.LUT.apply(RGB, interpolator=table_interpolation_tetrahedral)
+
 
 class LUT(Node):
     def __init__(self, path):
