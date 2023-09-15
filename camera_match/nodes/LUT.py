@@ -1,4 +1,5 @@
 import numpy as np
+import threading  # Import threading module
 from typing import Tuple, Any
 from scipy.spatial.distance import cdist
 from colour.algebra import table_interpolation_tetrahedral
@@ -30,20 +31,27 @@ class RBF(Node):
         xalglib.rbfsetpoints(model, data.tolist())
 
         # Initialize the progress bar
-        total_steps = 100  
+        total_steps = 100
         progress_bar = tqdm(total=total_steps, desc="Progress")
 
         # Part 1: Setting up the RBF model
         with tqdm(total=50, desc="Setting up RBF Model") as sub_progress_bar:
-            sub_progress_bar.update(10)  
+            sub_progress_bar.update(10)
             xalglib.rbfsetalgohierarchical(model, self.radius, self.layers, self.smoothing)
-            sub_progress_bar.update(40)  
+            sub_progress_bar.update(40)
 
-        xalglib.rbfbuildmodel(model)
-        print("Model built, starting second progress bar")  # Debugging print statement
+        def blocking_call():  # Define the blocking function
+            xalglib.rbfbuildmodel(model)
+            print("Model built, starting second progress bar")
+
+        # Create a thread to run the blocking function
+        thread = threading.Thread(target=blocking_call)
+
+        # Start the thread
+        thread.start()
 
         # Part 2: Building the LUT table
-        print("About to start second progress bar")  # Debugging print statement
+        print("About to start second progress bar")
         with tqdm(total=50, desc="Building LUT Table") as sub_progress_bar:
             grid = np.linspace(0, 1, self.size).tolist()
             table = xalglib.rbfgridcalc3v(model, grid, self.size, grid, self.size, grid, self.size)
@@ -56,9 +64,12 @@ class RBF(Node):
                 end_index = (sub_step + 1) * sub_step_size
 
                 sub_table = table[start_index:end_index]
-                sub_progress_bar.update(5)  
+                sub_progress_bar.update(5)
 
             sub_progress_bar.update(50 - (5 * num_sub_steps))
+
+        # Wait for the thread to complete
+        thread.join()
 
         # Close the progress bars
         progress_bar.close()
