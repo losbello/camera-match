@@ -42,14 +42,20 @@ class RBF(Node):
 
         def blocking_call():  # Define the blocking function
             print("Starting the blocking function...")
+            try:
             xalglib.rbfbuildmodel(model)
+            except Exception as e:
+                print(f"An error occurred: {e}")
             print("Blocking function completed.")
+
 
         # Create a thread to run the blocking function
         thread = threading.Thread(target=blocking_call)
 
         # Start the thread
         thread.start()
+        print("Thread started.")
+
 
         # Part 2: Building the LUT table
         print("About to start second progress bar")
