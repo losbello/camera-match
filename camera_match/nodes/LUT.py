@@ -29,17 +29,20 @@ class RBF(Node):
         model = xalglib.rbfcreate(3, 3)
         xalglib.rbfsetpoints(model, data.tolist())
 
-        # Part 1: Setting up the RBF model
-        with tqdm(total=50, desc="Setting up RBF Model") as progress_bar:
-            progress_bar.update(10)  # Update progress by 10% for the setup part
+        # Initialize the progress bar
+        total_steps = 100  # You can adjust this based on your process
+        progress_bar = tqdm(total=total_steps, desc="Progress")
 
+        # Part 1: Setting up the RBF model
+        with tqdm(total=50, desc="Setting up RBF Model") as sub_progress_bar:
+            sub_progress_bar.update(10)  # Update progress by 10% for the setup part
             xalglib.rbfsetalgohierarchical(model, self.radius, self.layers, self.smoothing)
-            progress_bar.update(40)  # Update progress by 40% for hierarchical setup
+            sub_progress_bar.update(40)  # Update progress by 40% for hierarchical setup
 
         xalglib.rbfbuildmodel(model)
 
         # Part 2: Building the LUT table
-        with tqdm(total=50, desc="Building LUT Table") as progress_bar:
+        with tqdm(total=50, desc="Building LUT Table") as sub_progress_bar:
             grid = np.linspace(0, 1, self.size).tolist()
             table = xalglib.rbfgridcalc3v(model, grid, self.size, grid, self.size, grid, self.size)
 
@@ -48,10 +51,11 @@ class RBF(Node):
             LUT_table = np.reshape(table, (self.size, self.size, self.size, 3)).swapaxes(0, 2)
 
             self.LUT = LUT3D(table=LUT_table)
-            progress_bar.update(50)  # Update progress by 50% for table building
+            sub_progress_bar.update(50)  # Update progress by 50% for table building
 
-        # Close the progress bar
+        # Close the progress bars
         progress_bar.close()
+        sub_progress_bar.close()
 
         return (self(source), target)
 
