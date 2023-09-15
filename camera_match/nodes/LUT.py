@@ -46,12 +46,22 @@ class RBF(Node):
             grid = np.linspace(0, 1, self.size).tolist()
             table = xalglib.rbfgridcalc3v(model, grid, self.size, grid, self.size, grid, self.size)
 
-            # xalglib outputs coordinates in (z, y, x). Swapping axis 0 and 2
-            # gives (x, y, z) which is needed for the LUT table.
-            LUT_table = np.reshape(table, (self.size, self.size, self.size, 3)).swapaxes(0, 2)
+            # Divide the process into sub-steps
+            num_sub_steps = 10
+            sub_step_size = len(table) // num_sub_steps
 
-            self.LUT = LUT3D(table=LUT_table)
-            sub_progress_bar.update(50)  # Update progress by 50% for table building
+            for sub_step in range(num_sub_steps):
+                start_index = sub_step * sub_step_size
+                end_index = (sub_step + 1) * sub_step_size
+
+                # Perform a sub-step of the calculation
+                sub_table = table[start_index:end_index]
+
+                # Update the progress bar for the sub-step
+                sub_progress_bar.update(5)  # Update by 5% for each sub-step
+
+            # Ensure the progress bar reaches 100%
+            sub_progress_bar.update(50 - (5 * num_sub_steps))
 
         # Close the progress bars
         progress_bar.close()
