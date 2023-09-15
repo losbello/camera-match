@@ -41,8 +41,9 @@ class RBF(Node):
             sub_progress_bar.update(40)
 
         def blocking_call():  # Define the blocking function
+            print("Starting the blocking function...")
             xalglib.rbfbuildmodel(model)
-            print("Model built, starting second progress bar")
+            print("Blocking function completed.")
 
         # Create a thread to run the blocking function
         thread = threading.Thread(target=blocking_call)
@@ -70,6 +71,7 @@ class RBF(Node):
 
         # Wait for the thread to complete
         thread.join()
+        print("Main thread has joined the child thread.")
 
         # Close the progress bars
         progress_bar.close()
